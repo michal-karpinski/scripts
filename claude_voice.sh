@@ -38,9 +38,16 @@ if [ -f "$PID_FILE" ]; then
         echo -n "$CLEAN_TEXT" | wl-copy
         
         # Wklejenie tekstu (Ctrl + Shift + V) za pomocą ydotool.
-        # ydotool 1.x przyjmuje tylko kody klawiszy (kod:1 = wciśnięcie, kod:0 = puszczenie),
-        # nazwy typu "ctrl+shift+v" są ignorowane. 29 = LEFTCTRL, 42 = LEFTSHIFT, 47 = V
-        ydotool key 29:1 42:1 47:1 47:0 42:0 29:0 2>/dev/null
+        # Składnia zależy od wersji:
+        #  - ydotool 0.1.x (apt w Ubuntu) przyjmuje nazwy: "ctrl+shift+v"
+        #    (kody typu "29:1" wpisuje jako tekst — stąd "244442" zamiast wklejenia)
+        #  - ydotool 1.x przyjmuje tylko kody klawiszy (kod:1 = wciśnięcie, kod:0 = puszczenie),
+        #    nazwy są ignorowane. 29 = LEFTCTRL, 42 = LEFTSHIFT, 47 = V
+        if ydotool key --help 2>&1 | grep -q 'separated by plus'; then
+            ydotool key ctrl+shift+v 2>/dev/null
+        else
+            ydotool key 29:1 42:1 47:1 47:0 42:0 29:0 2>/dev/null
+        fi
         
         notify-send "Claude Voice" "✅ Wklejono!" -t 1500
     else
