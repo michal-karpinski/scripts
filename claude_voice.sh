@@ -19,7 +19,7 @@ if [ -f "$PID_FILE" ]; then
     done
     rm -f "$PID_FILE"
 
-    notify-send "Claude Voice" "⚡ Przetwarzanie na Radeon 7900 XTX..." -i audio-input-microphone -t 2000
+    notify-send "Claude Voice" "⚡ Przetwarzanie ..." -i audio-input-microphone -t 2000
 
     # Przetwarzanie modelem large-v3-turbo z użyciem GPU
     TEXT=$($WHISPER_DIR/build/bin/whisper-cli -m $WHISPER_DIR/models/ggml-large-v3-turbo.bin -l pl -f $AUDIO_FILE --no-timestamps -nt 2>/dev/null)
