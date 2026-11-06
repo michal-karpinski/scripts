@@ -1,10 +1,17 @@
 #!/bin/bash
+# Wymagane paczki apt:
+#   sudo apt install pulseaudio-utils wl-clipboard ydotool libnotify-bin
+#   (parecord, wl-copy, ydotool/ydotoold, notify-send)
+# whisper-cli (whisper.cpp) instalowany osobno, musi być w ~/.local/bin lub w PATH.
+
 # Wskazanie poprawnej ścieżki do gniazda ydotool
 export YDOTOOL_SOCKET=/tmp/.ydotool_socket
+# Skróty KDE dziedziczą PATH sesji Plasmy, który nie zawiera ~/.local/bin (tam jest whisper-cli)
+export PATH="$HOME/.local/bin:$PATH"
 
 PID_FILE="/tmp/claude_voice.pid"
 AUDIO_FILE="/tmp/claude_voice.wav"
-# Ścieżka do Twojego whisper.cpp
+# Ścieżka do Twojego whisper.cpp (stąd brany jest model)
 WHISPER_DIR="$HOME/github/whisper.cpp"
 
 if [ -f "$PID_FILE" ]; then
@@ -22,15 +29,18 @@ if [ -f "$PID_FILE" ]; then
     notify-send "Claude Voice" "⚡ Przetwarzanie ..." -i audio-input-microphone -t 2000
 
     # Przetwarzanie modelem large-v3-turbo z użyciem GPU
-    TEXT=$($WHISPER_DIR/build/bin/whisper-cli -m $WHISPER_DIR/models/ggml-large-v3-turbo.bin -l pl -f $AUDIO_FILE --no-timestamps -nt 2>/dev/null)
+    # (whisper-cli z backendem CUDA — jedyne urządzenie 0 to NVIDIA RTX 3000 Ada)
+    TEXT=$(whisper-cli -m $WHISPER_DIR/models/ggml-large-v3-turbo.bin -l pl -f $AUDIO_FILE --no-timestamps -nt 2>/dev/null)
     CLEAN_TEXT=$(echo "$TEXT" | xargs)
 
     if [ -n "$CLEAN_TEXT" ]; then
         # Skopiowanie do schowka Waylanda
         echo -n "$CLEAN_TEXT" | wl-copy
         
-        # Wklejenie tekstu (Ctrl + Shift + V) za pomocą ydotool
-        ydotool key ctrl+shift+v 2>/dev/null
+        # Wklejenie tekstu (Ctrl + Shift + V) za pomocą ydotool.
+        # ydotool 1.x przyjmuje tylko kody klawiszy (kod:1 = wciśnięcie, kod:0 = puszczenie),
+        # nazwy typu "ctrl+shift+v" są ignorowane. 29 = LEFTCTRL, 42 = LEFTSHIFT, 47 = V
+        ydotool key 29:1 42:1 47:1 47:0 42:0 29:0 2>/dev/null
         
         notify-send "Claude Voice" "✅ Wklejono!" -t 1500
     else
