@@ -42,10 +42,13 @@ if [ -f "$PID_FILE" ]; then
         notify-send "Claude Voice" "⚡ Przetwarzanie przez whisper-server ..." -i audio-input-microphone -t 2000
         # response_format=text — w odpowiedzi sam tekst, bez JSON-a.
         # Język i brak znaczników czasu podajemy też w żądaniu, niezależnie od opcji serwera.
+        # beam_size=5: beam search jak domyślnie w whisper-cli (serwer domyślnie używa greedy),
+        # żeby oba tryby dawały ten sam tekst. Kosztuje ok. +0,1 s.
         TEXT=$(curl -sf --max-time 60 "$WHISPER_URL/inference" \
                 -F "file=@$AUDIO_FILE" \
                 --form-string language=pl \
                 --form-string no_timestamps=true \
+                --form-string beam_size=5 \
                 --form-string response_format=text) && ENGINE="whisper-server"
     fi
 
