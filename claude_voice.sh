@@ -1,8 +1,13 @@
 #!/bin/bash
+# Transkrypcja mowy modelem Whisper large-v3-turbo i wklejenie tekstu.
+# Jeśli działa whisper-server (podnosi go nvidia_wake.sh), korzysta z niego —
+# model jest już w GPU, więc odpada kilkusekundowy start CUDA i wczytywanie modelu.
+# W przeciwnym razie uruchamia whisper-cli.
+#
 # Wymagane paczki apt:
-#   sudo apt install pulseaudio-utils wl-clipboard ydotool libnotify-bin
-#   (parecord, wl-copy, ydotool/ydotoold, notify-send)
-# whisper-cli (whisper.cpp) instalowany osobno, musi być w ~/.local/bin lub w PATH.
+#   sudo apt install pulseaudio-utils wl-clipboard ydotool libnotify-bin curl
+#   (parecord, wl-copy, ydotool/ydotoold, notify-send, curl)
+# whisper-cli i whisper-server (whisper.cpp) instalowane osobno, muszą być w ~/.local/bin lub w PATH.
 
 # Wskazanie poprawnej ścieżki do gniazda ydotool
 export YDOTOOL_SOCKET=/tmp/.ydotool_socket
@@ -13,6 +18,8 @@ PID_FILE="/tmp/claude_voice.pid"
 AUDIO_FILE="/tmp/claude_voice.wav"
 # Ścieżka do Twojego whisper.cpp (stąd brany jest model)
 WHISPER_DIR="$HOME/github/whisper.cpp"
+# Adres whisper-server — musi się zgadzać z WHISPER_PORT w nvidia_wake.sh
+WHISPER_URL="http://127.0.0.1:8178"
 
 if [ -f "$PID_FILE" ]; then
     # --- ZATRZYMANIE NAGRYWANIA I TRANSKRYPCJA ---
@@ -26,11 +33,29 @@ if [ -f "$PID_FILE" ]; then
     done
     rm -f "$PID_FILE"
 
-    notify-send "Claude Voice" "⚡ Przetwarzanie ..." -i audio-input-microphone -t 2000
+    # ENGINE trafia do powiadomień, żeby było widać, czym przetworzono nagranie
+    ENGINE=""
 
-    # Przetwarzanie modelem large-v3-turbo z użyciem GPU
-    # (whisper-cli z backendem CUDA — jedyne urządzenie 0 to NVIDIA RTX 3000 Ada)
-    TEXT=$(whisper-cli -m $WHISPER_DIR/models/ggml-large-v3-turbo.bin -l pl -f $AUDIO_FILE --no-timestamps -nt 2>/dev/null)
+    # Najpierw whisper-server (endpoint /inference), jeśli działa.
+    # Szybkie sprawdzenie (strona główna serwera), żeby powiadomienie od razu mówiło, czego używamy.
+    if curl -sf -o /dev/null --max-time 1 "$WHISPER_URL/"; then
+        notify-send "Claude Voice" "⚡ Przetwarzanie przez whisper-server ..." -i audio-input-microphone -t 2000
+        # response_format=text — w odpowiedzi sam tekst, bez JSON-a.
+        # Język i brak znaczników czasu podajemy też w żądaniu, niezależnie od opcji serwera.
+        TEXT=$(curl -sf --max-time 60 "$WHISPER_URL/inference" \
+                -F "file=@$AUDIO_FILE" \
+                --form-string language=pl \
+                --form-string no_timestamps=true \
+                --form-string response_format=text) && ENGINE="whisper-server"
+    fi
+
+    if [ -z "$ENGINE" ]; then
+        # Serwer nie działa (lub zawiódł) — przetwarzanie modelem large-v3-turbo z użyciem GPU
+        # (whisper-cli z backendem CUDA — jedyne urządzenie 0 to NVIDIA RTX 3000 Ada)
+        ENGINE="whisper-cli"
+        notify-send "Claude Voice" "⚡ Przetwarzanie przez whisper-cli (serwer nie działa) ..." -i audio-input-microphone -t 2000
+        TEXT=$(whisper-cli -m "$WHISPER_DIR/models/ggml-large-v3-turbo.bin" -l pl -f "$AUDIO_FILE" --no-timestamps -nt 2>/dev/null)
+    fi
     CLEAN_TEXT=$(echo "$TEXT" | xargs)
 
     if [ -n "$CLEAN_TEXT" ]; then
@@ -49,9 +74,9 @@ if [ -f "$PID_FILE" ]; then
             ydotool key 29:1 42:1 47:1 47:0 42:0 29:0 2>/dev/null
         fi
         
-        notify-send "Claude Voice" "✅ Wklejono!" -t 1500
+        notify-send "Claude Voice" "✅ Wklejono! ($ENGINE)" -t 1500
     else
-        notify-send "Claude Voice" "⚠️ Nie rozpoznano mowy." -t 2000
+        notify-send "Claude Voice" "⚠️ Nie rozpoznano mowy. ($ENGINE)" -t 2000
     fi
 
 else
