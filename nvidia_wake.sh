@@ -26,7 +26,8 @@ WHISPER_PORT=8178
 SERVER_PID_FILE="/tmp/whisper_server.pid"
 SERVER_LOG="/tmp/whisper_server.log"
 
-state() { nvidia-smi -q | awk -F': ' '/Persistence Mode/ {print $2; exit}'; }
+# Pusty wynik = sterownik NVIDIA nie jest załadowany (nvidia-smi nie działa)
+state() { nvidia-smi -q 2>/dev/null | awk -F': ' '/Persistence Mode/ {print $2; exit}'; }
 
 server_running() {
     [ -f "$SERVER_PID_FILE" ] && kill -0 "$(cat "$SERVER_PID_FILE")" 2>/dev/null
@@ -78,10 +79,23 @@ fi
 # Przy wyłączaniu: najpierw serwer, żeby nie trzymał karty
 [ "$MODE" = 0 ] && stop_server
 
-pkexec /usr/bin/nvidia-smi -pm "$MODE"
+if [ "$MODE" = 1 ]; then
+    # Sterownik NVIDIA nie ładuje się sam po starcie systemu (blokuje go
+    # /usr/lib/modprobe.d/blacklist-nvidia.conf z nvidia-prime). Blokada dotyczy
+    # tylko ładowania po nazwie "nvidia", a nvidia_uvm (potrzebny CUDA) wciąga
+    # moduł nvidia jako zależność. Jeśli już jest załadowany, modprobe nic nie robi.
+    # Jedno wywołanie pkexec = jedno pytanie o hasło.
+    pkexec /bin/sh -c "/usr/sbin/modprobe nvidia_uvm && /usr/bin/nvidia-smi -pm 1"
+else
+    pkexec /usr/bin/nvidia-smi -pm 0
+fi
 
 if [ "$(state)" != "$WANT" ]; then
-    notify-send "NVIDIA" "Nie udało się zmienić persistence mode" -i dialog-error -t 4000
+    if [ -z "$(state)" ]; then
+        notify-send "NVIDIA" "Nie udało się załadować sterownika NVIDIA" -i dialog-error -t 4000
+    else
+        notify-send "NVIDIA" "Nie udało się zmienić persistence mode" -i dialog-error -t 4000
+    fi
     exit 1
 fi
 
